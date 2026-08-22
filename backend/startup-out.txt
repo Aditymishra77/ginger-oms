@@ -1,0 +1,5 @@
+
+> backend@1.0.0 dev
+> tsx src/index.ts
+
+Server running on port 3000

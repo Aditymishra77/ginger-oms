@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  name      String
+  role      String     // ADMIN, SALES_MANAGER, SALES_REP, LOGISTICS, FINANCE, AUDITOR
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  auditLogs AuditLog[]
+  documents Document[]
+  followUps FollowUp[]
+
+  @@index([role])
+}
+
+model Client {
+  id          String          @id @default(uuid())
+  name        String
+  taxId       String?
+  salesRepId  String?
+  status      String          @default("ACTIVE") // ACTIVE, ARCHIVED
+  isArchived  Boolean         @default(false)
+  addresses   ClientAddress[]
+  contacts    ContactPerson[]
+  orders      Order[]
+  invoices    InvoiceRecord[]
+  payments    Payment[]
+  documents   Document[]
+  followUps   FollowUp[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([status])
+  @@index([isArchived])
+  @@index([salesRepId])
+}
+
+model ClientAddress {
+  id           String   @id @default(uuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+  type         String   // BILLING, SHIPPING, BOTH
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  country      String
+  isDefault    Boolean  @default(false)
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model ContactPerson {
+  id        String   @id @default(uuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  role      String?
+  isPrimary Boolean  @default(false)
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model Product {
+  id                 String      @id @default(uuid())
+  sku                String      @unique
+  name               String
+  description        String?
+  baseUnitPriceCents Int
+  status             String      @default("ACTIVE") // ACTIVE, ARCHIVED
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  orderItems         OrderItem[]
+
+  @@index([status])
+}
+
+model Order {
+  id               String         @id @default(uuid())
+  clientId         String
+  client           Client         @relation(fields: [clientId], references: [id])
+  status           String         @default("DRAFT") // DRAFT, CONFIRMED, PROCESSING, PARTIALLY_DISPATCHED, FULLY_DISPATCHED, COMPLETED, CANCELLED
+  totalAmountCents Int            @default(0)
+  notes            String?
+  isArchived       Boolean        @default(false)
+  items            OrderItem[]
+  invoices         InvoiceOrder[]
+  dispatches       Dispatch[]
+  documents        Document[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([isArchived])
+}
+
+model OrderItem {
+  id             String         @id @default(uuid())
+  orderId        String
+  order          Order          @relation(fields: [orderId], references: [id])
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id])
+  quantity       Float
+  unitPriceCents Int
+  lineTotalCents Int
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  dispatchItems  DispatchItem[]
+
+  @@index([orderId])
+}
+
+model InvoiceRecord {
+  id               String              @id @default(uuid())
+  clientId         String
+  client           Client              @relation(fields: [clientId], references: [id])
+  invoiceNumber    String              @unique
+  invoiceDate      DateTime
+  dueDate          DateTime
+  subtotalCents    Int
+  gstAmountCents   Int
+  totalAmountCents Int
+  paidAmountCents  Int                 @default(0)
+  status           String              @default("UNPAID") // UNPAID, PARTIALLY_PAID, PAID, VOIDED
+  documentUrl      String?
+  orders           InvoiceOrder[]
+  allocations      PaymentAllocation[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model InvoiceOrder {
+  id              String        @id @default(uuid())
+  invoiceRecordId String
+  invoiceRecord   InvoiceRecord @relation(fields: [invoiceRecordId], references: [id])
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id])
+  createdAt       DateTime      @default(now())
+
+  @@index([invoiceRecordId])
+  @@index([orderId])
+}
+
+model Payment {
+  id              String              @id @default(uuid())
+  clientId        String
+  client          Client              @relation(fields: [clientId], references: [id])
+  amountCents     Int
+  paymentDate     DateTime
+  paymentMethod   String
+  referenceNumber String?
+  status          String              @default("UNALLOCATED") // UNALLOCATED, PARTIALLY_ALLOCATED, FULLY_ALLOCATED, VOIDED
+  notes           String?
+  allocations     PaymentAllocation[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model PaymentAllocation {
+  id                   String        @id @default(uuid())
+  paymentId            String
+  payment              Payment       @relation(fields: [paymentId], references: [id])
+  invoiceRecordId      String
+  invoiceRecord        InvoiceRecord @relation(fields: [invoiceRecordId], references: [id])
+  allocatedAmountCents Int
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([paymentId])
+  @@index([invoiceRecordId])
+}
+
+model Dispatch {
+  id             String         @id @default(uuid())
+  orderId        String
+  order          Order          @relation(fields: [orderId], references: [id])
+  status         String         @default("SCHEDULED") // SCHEDULED, IN_TRANSIT, DELIVERED, CANCELLED
+  dispatchDate   DateTime
+  carrier        String?
+  trackingNumber String?
+  podUrl         String?
+  items          DispatchItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model DispatchItem {
+  id              String    @id @default(uuid())
+  dispatchId      String
+  dispatch        Dispatch  @relation(fields: [dispatchId], references: [id])
+  orderItemId     String
+  orderItem       OrderItem @relation(fields: [orderItemId], references: [id])
+  quantityShipped Float
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([dispatchId])
+  @@index([orderItemId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  oldValues  String?
+  newValues  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Document {
+  id         String    @id @default(uuid())
+  clientId   String?
+  client     Client?   @relation(fields: [clientId], references: [id])
+  orderId    String?
+  order      Order?    @relation(fields: [orderId], references: [id])
+  name       String
+  url        String
+  fileType   String
+  fileSize   Int?
+  uploadedBy String
+  user       User      @relation(fields: [uploadedBy], references: [id])
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  @@index([clientId])
+  @@index([orderId])
+  @@index([isArchived])
+}
+
+model FollowUp {
+  id          String   @id @default(uuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String   // CALL, EMAIL, MEETING
+  notes       String
+  scheduledAt DateTime
+  status      String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+}
