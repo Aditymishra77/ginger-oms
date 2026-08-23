@@ -28,32 +28,6 @@ declare global {
   }
 }
 
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-export function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const record = loginAttempts.get(ip);
-  if (!record || now > record.resetAt) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
-    return true;
-  }
-  if (record.count >= 10) return false;
-  record.count++;
-  return true;
-}
-
-export function resetRateLimit(ip: string): void {
-  loginAttempts.delete(ip);
-}
-
-export function generateToken(payload: JwtPayload): string {
-  return jwt.sign(payload, SECRET, { expiresIn: '24h' });
-}
-
-export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, SECRET) as JwtPayload;
-}
-
 const authRouter = Router();
 
 authRouter.post('/login', async (req: Request, res: Response) => {
@@ -94,20 +68,34 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
 export { authRouter };
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-  const token = authHeader.substring(7);
-  try {
-    const decoded = verifyToken(token);
-    req.user = decoded;
-    next();
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
+export function verifyToken(token: string): JwtPayload {
+  return jwt.verify(token, SECRET) as JwtPayload;
+}
+
+export function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  return new Promise<void>(async (resolve) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authentication required' });
+      resolve();
+      return;
+    }
+    const token = authHeader.substring(7);
+    try {
+      const decoded = verifyToken(token);
+      const dbUser = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true, role: true } });
+      if (!dbUser) {
+        res.status(401).json({ error: 'User no longer exists. Please log in again.' });
+        resolve();
+        return;
+      }
+      req.user = dbUser;
+      resolve();
+    } catch {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      resolve();
+    }
+  });
 }
 
 export function requireRole(...roles: string[]) {

@@ -97,7 +97,7 @@ router.post('/', validate(createClientSchema), async (req: Request, res: Respons
 
     await tx.auditLog.create({
       data: {
-        userId: req.user!.userId,
+        userId: (console.log('USER:', req.user), req.user!.userId),
         action: 'CREATE',
         entityType: 'Client',
         entityId: client.id,
