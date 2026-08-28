@@ -99,13 +99,17 @@ router.post('/', validate(createOrderSchema), async (req: Request, res: Response
     let totalAmountCents = 0;
     const orderItems = items.map((item: any) => {
       const product = productMap.get(item.productId)!;
-      const lineTotal = product.baseUnitPriceCents * item.quantity;
-      totalAmountCents += lineTotal;
+      // The order line keeps a price snapshot. If a client-specific rate is
+      // supplied, that rate becomes the historical selling price for this line.
+      const unitPriceCents = item.unitPriceCents ?? product.baseUnitPriceCents;
+      const lineTotal = unitPriceCents * item.quantity;
+      const lineTotalCents = Math.round(lineTotal);
+      totalAmountCents += lineTotalCents;
       return {
         productId: item.productId,
         quantity: item.quantity,
-        unitPriceCents: product.baseUnitPriceCents,
-        lineTotalCents: Math.round(lineTotal),
+        unitPriceCents,
+        lineTotalCents,
       };
     });
 
