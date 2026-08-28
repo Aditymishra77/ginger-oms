@@ -44,6 +44,9 @@ export const createOrderSchema = z.object({
   items: z.array(z.object({
     productId: z.string().uuid(),
     quantity: z.number().positive(),
+    // Optional client-specific selling rate for this order line.
+    // When omitted, the product's baseUnitPriceCents is used.
+    unitPriceCents: z.number().int().positive().optional(),
   })).min(1),
 });
 
