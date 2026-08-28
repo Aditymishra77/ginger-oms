@@ -7,7 +7,7 @@ import { Trash2 } from 'lucide-react';
 export function OrderCreate() {
   const navigate = useNavigate();
   const [clientId, setClientId] = useState('');
-  const [items, setItems] = useState<{ productId: string; quantity: number }[]>([]);
+  const [items, setItems] = useState<{ productId: string; quantity: number; unitPriceCents: number }[]>([]);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -28,29 +28,34 @@ export function OrderCreate() {
     }
   });
 
-  const handleAddItem = () => setItems([...items, { productId: '', quantity: 1 }]);
+  const handleAddItem = () => setItems([...items, { productId: '', quantity: 1, unitPriceCents: 0 }]);
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
   const handleItemChange = (index: number, field: string, value: any) => {
     const newItems = [...items];
-    (newItems[index] as any)[field] = value;
+    if (field === 'productId') {
+      const product = (products || []).find((p: any) => p.id === value);
+      newItems[index] = {
+        ...newItems[index],
+        productId: value,
+        unitPriceCents: product?.baseUnitPriceCents || 0,
+      };
+    } else {
+      (newItems[index] as any)[field] = value;
+    }
     setItems(newItems);
   };
 
   const calculateTotal = () => {
-    return items.reduce((total, item) => {
-      const product = products?.find((p: any) => p.id === item.productId);
-      if (product) return total + ((product.baseUnitPriceCents || 0) * item.quantity);
-      return total;
-    }, 0);
+    return items.reduce((total, item) => total + ((item.unitPriceCents || 0) * item.quantity), 0);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!clientId || items.length === 0 || items.some(i => !i.productId || !i.quantity || i.quantity <= 0)) {
-      setError('Please select a client and add at least one product with a quantity.');
+    if (!clientId || items.length === 0 || items.some(i => !i.productId || !i.quantity || i.quantity <= 0 || !i.unitPriceCents || i.unitPriceCents <= 0)) {
+      setError('Please select a client and add products with valid quantities and selling rates.');
       return;
     }
 
@@ -59,7 +64,11 @@ export function OrderCreate() {
       await api.post('/orders', {
         clientId,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
-        items: items.map(i => ({ productId: i.productId, quantity: i.quantity }))
+        items: items.map(i => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          unitPriceCents: Math.round(i.unitPriceCents),
+        }))
       });
       navigate('/orders');
     } catch (err: any) {
@@ -70,7 +79,7 @@ export function OrderCreate() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Create New Order</h1>
 
       {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -91,7 +100,10 @@ export function OrderCreate() {
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Order Items</h2>
+            <div>
+              <h2 className="text-lg font-semibold">Order Items</h2>
+              <p className="text-xs text-gray-500 mt-1">Set the actual selling rate for this client on each order line.</p>
+            </div>
             <button type="button" onClick={handleAddItem} className="text-sm bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-200">
               + Add Product
             </button>
@@ -101,35 +113,58 @@ export function OrderCreate() {
             {items.map((item, index) => {
               const product = (products || []).find((p: any) => p.id === item.productId);
               return (
-                <div key={index} className="flex flex-col md:flex-row md:items-center gap-3 md:space-x-4">
-                  <select
-                    value={item.productId}
-                    onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
-                    className="flex-1 p-2 border border-gray-300 rounded-lg bg-white"
-                    required
-                  >
-                    <option value="">Select Product...</option>
-                    {(products || []).map((p: any) => (
-                      <option key={p.id} value={p.id}>{p.name} (SKU: {p.sku}) - ₹{((p.baseUnitPriceCents || 0) / 100).toFixed(2)}</option>
-                    ))}
-                  </select>
-
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={item.quantity}
-                    onChange={(e) => handleItemChange(index, 'quantity', parseFloat(e.target.value))}
-                    className="md:w-32 p-2 border border-gray-300 rounded-lg"
-                    placeholder="Qty"
-                    required
-                  />
-
-                  <div className="md:w-32 text-right text-gray-700 font-medium">
-                    ₹{product ? ((product.baseUnitPriceCents * item.quantity) / 100).toFixed(2) : '0.00'}
+                <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_110px_150px_120px_40px] gap-3 items-end">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Product</label>
+                    <select
+                      value={item.productId}
+                      onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg bg-white"
+                      required
+                    >
+                      <option value="">Select Product...</option>
+                      {(products || []).map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.name} (SKU: {p.sku})</option>
+                      ))}
+                    </select>
                   </div>
 
-                  <button type="button" onClick={() => handleRemoveItem(index)} className="text-red-500 p-2 hover:bg-red-50 rounded-lg">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Qty</label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={item.quantity}
+                      onChange={(e) => handleItemChange(index, 'quantity', parseFloat(e.target.value))}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Selling Rate (₹)</label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={item.unitPriceCents ? (item.unitPriceCents / 100).toFixed(2) : ''}
+                      onChange={(e) => handleItemChange(index, 'unitPriceCents', Math.round(parseFloat(e.target.value || '0') * 100))}
+                      className="w-full p-2 border border-indigo-300 rounded-lg bg-indigo-50"
+                      placeholder="Client rate"
+                      required
+                    />
+                    {product && <p className="text-[11px] text-gray-500 mt-1">Base: ₹{((product.baseUnitPriceCents || 0) / 100).toFixed(2)}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Line Total</label>
+                    <div className="p-2 text-right text-gray-700 font-medium border border-gray-100 rounded-lg bg-gray-50">
+                      ₹{((item.unitPriceCents * item.quantity) / 100).toFixed(2)}
+                    </div>
+                  </div>
+
+                  <button type="button" onClick={() => handleRemoveItem(index)} className="text-red-500 p-2 hover:bg-red-50 rounded-lg mb-0.5">
                     <Trash2 size={20} />
                   </button>
                 </div>
@@ -142,7 +177,6 @@ export function OrderCreate() {
             <span className="font-semibold text-gray-700">Total Amount:</span>
             <span className="text-xl font-bold text-gray-900">₹{(calculateTotal() / 100).toFixed(2)}</span>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Note: The server snapshots prices and computes the final total.</p>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
@@ -158,7 +192,7 @@ export function OrderCreate() {
         <div className="flex justify-end space-x-4">
           <button type="button" onClick={() => navigate('/orders')} className="px-6 py-2 border border-gray-300 rounded-lg">Cancel</button>
           <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50">
-            {isSubmitting ? 'Saving...' : 'Confirm Order'}
+            {isSubmitting ? 'Saving...' : 'Create Order'}
           </button>
         </div>
       </form>
